@@ -1,0 +1,232 @@
+---
+title: "Cyclist Case Study on Google Data Analytics Course"
+author: "Akila Ekanayake"
+date: "11/18/2021"
+output: html_document
+---
+
+## Setting up with using libraries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(anytime)
+library(lubridate)
+library(scales)
+```
+
+## Case Study in brief
+Cyclistic offers a bike-sharing service since 2016. "In 2016, Cyclistic launched a successful bike-share offering. Since then, the program has grown to a fleet of 5,824 bicycles that are geotracked and locked into a network of 692 stations across Chicago. The bikes can be unlocked from one station and returned to any other station in the system anytime."
+
+Stakeholders wants to understand how casual riders and annual members use Cyclistic bikes differently. From these insights,they will design a new marketing strategy to convert casual riders into annual members.
+
+
+## Importing the Data
+With the onlinr version of R-Studio I couldn't extract and load all the csv files at once. With the Desktop version I have used a method that have presented in another GitHub repository (https://github.com/10below/arpeggio). 
+
+From this method I have extracted the csv files into a single folder that have defined as my workplace. Below code snippet have used to read and concat all the csv files into a single dataframe.
+
+```{r importing data, results='hide'}
+## Adding the .csv files to file list. Since I have saved the files in the working directory path does not have to defined. In case you used another place you have to provide the path correctly
+file_list <- list.files(path = ".", pattern = "*-divvy-tripdata.csv") 
+
+## Extracting the csv file list to "data" object
+data <- ldply(.data = file_list, .fun=read.csv)
+```
+
+## Dataset overlook
+Data set have 5,378,834 observations
+
+```{r}
+str(data)
+```
+
+## Data cleaning and Preprocessing
+###Original data in the dataframe
+ride_id : A unique identifier for the trip
+rideable_type : The type of bicyle (Classic, Docked, Electric)
+started_at : Datetime of when the trip started
+ended_at : Datetime of when the trip ended
+start_station_name : The name of the dock station where the trip started
+start_station_id : The ID of the dock station where the trip started
+end_station_name, end_station_id : Same for where the trip ended
+start_lat, start_lng : The GPS coordinates of the trip start
+end_lat, end_lng : The GPS coordinates of the trip end
+member_casual : Membership type (casual or member)
+
+### Changing "started_at" and "ended_at" data types into datetime
+Originally starting dates and ending dates were recognized as "char". They had to change into datetime data type for calculations
+
+```{r convert datetime}
+data$started_at <- anytime(data$started_at)
+data$ended_at <- anytime(data$ended_at)
+```
+
+### Adding new columns to the dataframe
+By adding new columns we can filter, calculate, and get insights easily and we can have a more wide view on the data frame.
+
+#### Duration
+By subtracting Starting time from Ending time I have calculated the trip duration and saved into the column "duration". There were some negative durations and I decided to drop the rows with negative values
+
+```{r create duration column}
+## Adding the new column
+data <- data %>%
+  mutate(duration = ended_at - started_at)
+
+## Looking for negative values
+negative_durations <- filter(data, duration < 0)
+negative_durations
+
+## Filtering and saving into a new dataframe
+filtered_data <- filter(data, duration > 0)
+```
+
+#### Weekdays
+Categorizing the dates by weekdays and day of the week and labeling them to save in a "day_of_the_week" column
+
+```{r create weekday columns}
+## Numerically identifying the weekdays starting with Monday -> 1
+filtered_data <- filtered_data %>%
+  mutate(day_of_the_week = wday(filtered_data$started_at, week_start = 1))
+
+## With the defined values we can filter and label the weekdays and weekends
+filtered_data <- filtered_data %>%
+  mutate(weekday = ifelse(day_of_the_week >= 6, "weekend", "weekday"))
+```
+
+#### Months
+Columns with year and Month added as "year_month"
+```{r create year month column}
+filtered_data <- filtered_data %>%
+  mutate(year_month = format(as.POSIXct(filtered_data$started_at), format = "%Y%m"))
+```
+
+
+## Plots
+With plots, we can visually examine the relations of the data.
+
+### Member Type vs the Day of the week
+```{r plot of day of the week vs member type}
+ggplot(data=filtered_data, aes(fill=member_casual, x=day_of_the_week)) +
+  geom_bar(position="dodge", stat="count") +
+  scale_y_continuous(labels = scales::label_number_si()) +
+  theme(axis.text.x = element_text()) +
+  labs(y = "Trips", x = "Day of Week", fill = "Member Type")
+```
+
+Number of trips are increasing for both member types till Saturday and sudden fall in Sunday than Saturday but not more than Friday. Overall, weekends have the highest number of trips. For the weekdays, there is a recognizable gap between two member types and the trips. But in the weekend casual members have increased almost twice the number than weekdays. How ever we can see that permenent members have the highest number of trips throughout the week.
+
+### Member Type vs the Month distribution
+```{r plot of month and year vs member type}
+ggplot(data=filtered_data, aes(fill=member_casual, x=year_month)) +
+  geom_bar(position="dodge", stat="count") +
+  scale_y_continuous(labels = scales::label_number_si()) +
+  theme(axis.text.x = element_text()) +
+  labs(y = "Trips", x = "Months", fill = "Member Type")
+```
+
+We can see that number of trips are increasing in a seasonal pattern. Casual member trips are higher in some months. 
+
+### Member Type vs Bike Type distribution
+```{r plot of bike type by member type}
+ggplot(data=filtered_data, aes(fill=rideable_type, x=day_of_the_week)) +
+  geom_bar(position="stack", stat="count") +
+  scale_y_continuous(labels = scales::label_number_si()) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(y = "# of Trips", x = "Week Days") +
+  scale_fill_discrete(name="Bike Type", labels = c("Docked","Electric")) +
+  facet_wrap(~member_casual)
+```
+
+Docked bikes have the upper hand on popularity over electric bikes. As per the above plot usage is increasing towards the weekends.
+
+### Durations with Member types
+```{r plot of duration by member type}
+ggplot(data=filtered_data, aes(duration)) +
+  geom_histogram(binwidth = 900) +
+  xlim(0, 3600) +
+  scale_y_continuous(labels = scales::label_number_si()) +
+  facet_wrap(~member_casual)
+```
+
+Patterns are same in the two plots. But we can see alarming high value in permanent members plot around 1000 secs.
+
+### Durations with Bike types
+```{r plot of duration by bike type}
+ggplot(data=filtered_data, aes(duration)) +
+  geom_histogram(binwidth = 900) +
+  xlim(0, 3600) +
+  scale_y_continuous(labels = scales::label_number_si()) +
+  facet_wrap(~rideable_type)
+```
+
+Both bike types have same patterns in the plots.
+
+### Duration with Day of the week
+```{r plot of duration by day of the week}
+ggplot(data=filtered_data, aes(duration)) +
+  geom_histogram(binwidth = 900) +
+  xlim(0, 3600) +
+  scale_y_continuous(labels = scales::label_number_si()) +
+  facet_wrap(~day_of_the_week)
+```
+
+All the patterns have same decreasing pattern with duration. We can see a increase in 3000 secs duration in the weekend plots which could be a valuable point to identify the audience. 
+
+## Top 10 Stations
+### Top stations among Casual members
+```{r top start stations for casual members}
+start_stations <- filtered_data %>%
+  filter(start_station_name != "") %>% 
+  filter(member_casual == "casual") %>%
+  group_by(start_station_name) %>%
+  tally(sort = TRUE) %>%
+  ungroup() %>%
+  arrange(desc(n))
+head(start_stations, 10)
+```
+
+### Top 10 stations among Permenant members
+```{r top start stations for non casual members}
+start_stations <- filtered_data %>%
+  filter(start_station_name != "") %>% 
+  filter(member_casual == "member") %>%
+  group_by(start_station_name) %>%
+  tally(sort = TRUE) %>%
+  ungroup() %>%
+  arrange(desc(n))
+head(start_stations, 10)
+```
+
+Only Clark St & Elm St, Clark St & Lincoln Ave, Larrabee St & Webster Ave stations are common in top 10 stations of the both member types
+
+### Top 10 stations among Docked bike users
+```{r top start stations for docked bike users}
+start_stations <- filtered_data %>%
+  filter(start_station_name != "") %>% 
+  filter(rideable_type == "docked_bike") %>%
+  group_by(start_station_name) %>%
+  tally(sort = TRUE) %>%
+  ungroup() %>%
+  arrange(desc(n))
+head(start_stations, 10)
+```
+
+### Top 10 stations among Electric bike users
+```{r top start stations for electric bike users}
+start_stations <- filtered_data %>%
+  filter(start_station_name != "") %>% 
+  filter(rideable_type == "electric") %>%
+  group_by(start_station_name) %>%
+  tally(sort = TRUE) %>%
+  ungroup() %>%
+  arrange(desc(n))
+head(start_stations, 10)
+```
+
+Clark St & Elm St, Broadway & Barry Ave, Dearborn St & Erie St, Larrabee St & Webster Ave, Clark St & Armitage Ave, and Wells St & Concord Ln stations are common in top 10 stations by the bike types.
+
+With the above plots and lists we can identify the differences between two groups of members and their specialties. With this data we can target the marketing campaign based on stations, months, weekdays, and bike types.
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
